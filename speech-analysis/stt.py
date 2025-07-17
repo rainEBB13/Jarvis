@@ -20,12 +20,12 @@ import logging
 # Configure logging
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(**name**)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class AudioConfig:
-    """Audio configuration settings�"""
+    """Audio configuration settingsÃ¢"""
 
     sample_rate: int = 16000
     channels: int = 1
@@ -37,7 +37,7 @@ class AudioConfig:
 
 
 class AudioBuffer:
-    """Circular buffer for audio data with voice activity detection�"""
+    """Circular buffer for audio data with voice activity detectionÃ¢"""
 
     def __init__(self, max_size: int = 32000):  # ~2 seconds at 16kHz
         self.buffer = deque(maxlen=max_size)
@@ -84,7 +84,7 @@ class AudioBuffer:
 
 
 class WhisperSTT:
-    """Whisper-based STT implementation - The heavyweight champion�"""
+    """Whisper-based STT implementation - The heavyweight championÃ¢"""
 
     def __init__(self, model_name: str = "base"):
         try:
@@ -122,7 +122,7 @@ class WhisperSTT:
 
 
 class VoskSTT:
-    """Vosk-based STT implementation - The lightweight speedster�"""
+    """Vosk-based STT implementation - The lightweight speedsterÃ¢"""
 
     def __init__(self, model_path: str = "vosk-model-small-en-us-0.15"):
         try:
@@ -168,7 +168,7 @@ class VoskSTT:
 
 
 class WakeWordDetector:
-    """Simple wake word detection - because we need to know when to listen�"""
+    """Simple wake word detection - because we need to know when to listenÃ¢"""
 
     def __init__(self, wake_words: list = ["jarvis", "hey jarvis"]):
         self.wake_words = [word.lower() for word in wake_words]
@@ -197,7 +197,7 @@ class WakeWordDetector:
 
 
 class JarvisSTT:
-    """Main STT coordinator - The brains of the operation�"""
+    """Main STT coordinator - The brains of the operationÃ¢"""
 
     def __init__(self, 
                  stt_engine: str = "whisper",
@@ -224,7 +224,7 @@ class JarvisSTT:
         
         # Callback for when speech is detected
         self.on_speech_callback: Optional[Callable[[str], None]] = None
-        self.on_wake_word_callback: Optional[Callable[], None]] = None
+        self.on_wake_word_callback: Optional[Callable[[], None]] = None
 
     def set_speech_callback(self, callback: Callable[[str], None]):
         """Set callback for when speech is transcribed"""
@@ -341,7 +341,7 @@ class JarvisSTT:
 
 # Example usage and testing
 
-if __name__ == __main__:
+if __name__ == "__main__":
     def on_speech(text: str):
         print(f"Speech detected: {text}")
 
