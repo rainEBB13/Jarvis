@@ -31,8 +31,8 @@ class AudioConfig:
     channels: int = 1
     chunk_size: int = 1024
     format: int = pyaudio.paInt16
-    silence_threshold: float = 0.01
-    silence_duration: float = 1.0  # seconds
+    silence_threshold: float = 25.0
+    silence_duration: float = 0.5  # seconds
     max_recording_time: float = 30.0  # seconds
 
 
@@ -44,15 +44,44 @@ class AudioBuffer:
         self.is_recording = False
         self.silence_counter = 0
         self.speech_detected = False
+        self.recent_rms = deque(maxlen=10)  # Track recent RMS values
+        self.background_rms = 0.0
         
     def add_chunk(self, chunk: np.ndarray, config: AudioConfig) -> bool:
         """Add audio chunk and detect speech activity"""
         # Calculate RMS for voice activity detection
-        rms = np.sqrt(np.mean(chunk ** 2))
+        if len(chunk) == 0:
+            rms = 0.0
+        else:
+            mean_square = np.mean(chunk.astype(np.float64) ** 2)
+            # Handle edge cases: NaN, negative values, or very small values
+            if np.isnan(mean_square) or mean_square < 0:
+                rms = 0.0
+            else:
+                rms = np.sqrt(mean_square)
         
-        if rms > config.silence_threshold:
+        # Track recent RMS values for adaptive thresholding
+        self.recent_rms.append(rms)
+        
+        # Update background noise estimate when not speaking
+        if not self.speech_detected and len(self.recent_rms) >= 5:
+            self.background_rms = np.mean(self.recent_rms)
+        
+        # Use adaptive threshold: background + margin
+        adaptive_threshold = max(config.silence_threshold, self.background_rms + 10.0)
+        
+        # Debug: Print RMS values occasionally to help tune threshold
+        if hasattr(self, '_debug_counter'):
+            self._debug_counter += 1
+        else:
+            self._debug_counter = 0
+            
+        if self._debug_counter % 500 == 0:  # Print every 500 chunks (~30 seconds)
+            logger.info(f"RMS: {rms:.1f}, Adaptive Threshold: {adaptive_threshold:.1f}, Background: {self.background_rms:.1f}, Speech: {self.speech_detected}")
+        
+        if rms > adaptive_threshold:
             if not self.speech_detected:
-                logger.info("Speech detected - starting recording")
+                logger.info(f"Speech detected - starting recording (RMS: {rms:.1f} > {adaptive_threshold:.1f})")
                 self.speech_detected = True
                 self.is_recording = True
             self.silence_counter = 0
@@ -60,8 +89,14 @@ class AudioBuffer:
             if self.speech_detected:
                 self.silence_counter += 1
                 # If silence for configured duration, stop recording
-                if self.silence_counter > (config.silence_duration * config.sample_rate / config.chunk_size):
-                    logger.info("Silence detected - stopping recording")
+                silence_threshold_chunks = config.silence_duration * config.sample_rate / config.chunk_size
+                
+                # Debug: Show silence progress occasionally
+                if self.silence_counter % 3 == 0:  # Every 3 chunks
+                    logger.info(f"Silence counting: {self.silence_counter}/{silence_threshold_chunks} chunks (RMS: {rms:.1f} <= {adaptive_threshold:.1f})")
+                
+                if self.silence_counter > silence_threshold_chunks:
+                    logger.info(f"✅ Silence detected - stopping recording (silence for {self.silence_counter} chunks, threshold: {silence_threshold_chunks})")
                     self.is_recording = False
                     return True  # Signal that we have a complete utterance
         
@@ -217,6 +252,8 @@ class JarvisSTT:
             self.stt_engine = VoskSTT(model_name)
         else:
             raise ValueError(f"Unknown STT engine: {stt_engine}")
+
+        logger.info("STT Engine loaded")
         
         # Initialize PyAudio
         self.audio = pyaudio.PyAudio()
