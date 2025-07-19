@@ -1,0 +1,28 @@
+{
+  "audio": {
+    "sample_rate": 16000,
+    "channels": 1,
+    "chunk_size": 1024,
+    "format": "paInt16",
+    "silence_threshold": 50.0,
+    "silence_duration": 0.3,
+    "max_recording_time": 10.0
+  },
+  "stt": {
+    "default_engine": "whisper",
+    "whisper": {
+      "default_model": "tiny.en"
+    },
+    "vosk": {
+      "default_model": "vosk-model-small-en-us-0.15"
+    }
+  },
+  "wake_words": [
+    "jarvis",
+    "hey jarvis"
+  ],
+  "debug": {
+    "audio_processing": false,
+    "rms_logging_interval": 500
+  }
+}

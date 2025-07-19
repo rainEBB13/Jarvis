@@ -15,6 +15,12 @@ from typing import Optional, Callable, Dict, Any
 from dataclasses import dataclass
 from collections import deque
 import logging
+import sys
+import os
+
+# Add parent directory to path to import config_manager
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config_manager import get_config
 
 # Configure logging
 
@@ -24,15 +30,26 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AudioConfig:
-    """Audio configuration settingsÃ¢"""
+    """Audio configuration settings"""
 
-    sample_rate: int = 16000
-    channels: int = 1
-    chunk_size: int = 1024
-    format: int = pyaudio.paInt16
-    silence_threshold: float = 20.0
-    silence_duration: float = 0.8  # seconds
-    max_recording_time: float = 10.0  # seconds
+    def __init__(self):
+        config = get_config()
+        audio_config = config.get_audio_config()
+        
+        self.sample_rate: int = audio_config.get('sample_rate', 16000)
+        self.channels: int = audio_config.get('channels', 1)
+        self.chunk_size: int = audio_config.get('chunk_size', 1024)
+        
+        # Handle format string conversion
+        format_str = audio_config.get('format', 'paInt16')
+        if format_str == 'paInt16':
+            self.format: int = pyaudio.paInt16
+        else:
+            self.format: int = pyaudio.paInt16  # default fallback
+            
+        self.silence_threshold: float = audio_config.get('silence_threshold', 50.0)
+        self.silence_duration: float = audio_config.get('silence_duration', 0.3)
+        self.max_recording_time: float = audio_config.get('max_recording_time', 10.0)
 
 
 class AudioBuffer:
@@ -83,8 +100,12 @@ class AudioBuffer:
             self._debug_counter += 1
         else:
             self._debug_counter = 0
+        
+        # Get debug config for RMS logging interval
+        debug_config = get_config().get_debug_config()
+        rms_logging_interval = debug_config.get('rms_logging_interval', 500)
             
-        if self.debug and self._debug_counter % 500 == 0:  # Print every 500 chunks (~30 seconds)
+        if self.debug and self._debug_counter % rms_logging_interval == 0:
             logger.info(f"RMS: {rms:.1f}, Speech Threshold: {speech_threshold:.1f}, Silence Threshold: {silence_threshold:.1f}, Background: {self.background_rms:.1f}, Speech: {self.speech_detected}")
         
         # Speech detection: use higher threshold
@@ -143,7 +164,11 @@ class AudioBuffer:
 class WhisperSTT:
     """Whisper-based STT implementation - The heavyweight championÃ¢"""
 
-    def __init__(self, model_name: str = "base.en"):
+    def __init__(self, model_name: str = None):
+        if model_name is None:
+            config = get_config()
+            model_name = config.get('stt.whisper.default_model', 'tiny.en')
+            
         try:
             import whisper
             self.model = whisper.load_model(model_name)
@@ -181,7 +206,11 @@ class WhisperSTT:
 class VoskSTT:
     """Vosk-based STT implementation - The lightweight speedsterÃ¢"""
 
-    def __init__(self, model_path: str = "vosk-model-small-en-us-0.15"):
+    def __init__(self, model_path: str = None):
+        if model_path is None:
+            config = get_config()
+            model_path = config.get('stt.vosk.default_model', 'vosk-model-small-en-us-0.15')
+            
         try:
             import vosk
             self.model = vosk.Model(model_path)
@@ -227,7 +256,11 @@ class VoskSTT:
 class WakeWordDetector:
     """Simple wake word detection - because we need to know when to listenÃ¢"""
 
-    def __init__(self, wake_words: list = ["jarvis", "hey jarvis"]):
+    def __init__(self, wake_words: list = None):
+        if wake_words is None:
+            config = get_config()
+            wake_words = config.get_wake_words()
+            
         self.wake_words = [word.lower() for word in wake_words]
         self.last_detection = 0
         self.cooldown = 2.0  # seconds
@@ -257,10 +290,17 @@ class JarvisSTT:
     """Main STT coordinator - The brains of the operationÃ¢"""
 
     def __init__(self, 
-                 stt_engine: str = "whisper",
-                 model_name: str = "base",
-                 wake_words: list = ["jarvis", "hey jarvis"],
-                 debug: bool = False):
+                 stt_engine: str = None,
+                 model_name: str = None,
+                 wake_words: list = None,
+                 debug: bool = None):
+        
+        # Load config values if not provided
+        config = get_config()
+        if stt_engine is None:
+            stt_engine = config.get('stt.default_engine', 'whisper')
+        if debug is None:
+            debug = config.get('debug.audio_processing', False)
         
         self.config = AudioConfig()
         self.audio_buffer = AudioBuffer(debug=debug)
@@ -401,7 +441,7 @@ class JarvisSTT:
         if self.debug: logger.info(f"Starting listen_and_transcribe with {timeout}s timeout")
         
         # Create a temporary audio buffer for this session
-        temp_buffer = AudioBuffer(debug=False)
+        temp_buffer = AudioBuffer(debug=self.debug)
         transcription = ""
         
         try:
