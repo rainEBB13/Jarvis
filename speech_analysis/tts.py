@@ -349,6 +349,8 @@ class JarvisTTS:
             self.tts_engine = PyttsxTTS(self.config)
         elif tts_engine.lower() == "coqui":
             self.tts_engine = CoquiTTS(self.config, model_name)
+        elif tts_engine.lower() == "system":
+            self.tts_engine = None  # Use system say directly
         else:
             raise ValueError(f"Unknown TTS engine: {tts_engine}")
 
@@ -413,10 +415,33 @@ class JarvisTTS:
 
     def speak_direct(self, text: str):
         """Speak text directly without personality enhancement"""
-        if isinstance(self.tts_engine, PyttsxTTS):
-            self.tts_engine.speak_directly(text)
+        if self.tts_engine is None:  # System TTS
+            self._fallback_system_say(text)
+        elif isinstance(self.tts_engine, PyttsxTTS):
+            # Try pyttsx3 first
+            try:
+                self.tts_engine.speak_directly(text)
+            except Exception as e:
+                logger.warning(f"pyttsx3 failed, using system say: {e}")
+                self._fallback_system_say(text)
         else:
             self.speak(text, use_personality=False)
+    
+    def _fallback_system_say(self, text: str):
+        """Fallback to macOS say command"""
+        try:
+            import subprocess
+            import platform
+            
+            if platform.system() == "Darwin":  # macOS
+                # Use macOS say command with Daniel voice
+                subprocess.run(["say", "-v", "Daniel", text], check=True)
+                logger.info(f"System say: '{text}'")
+            else:
+                logger.error("System say fallback not available on this platform")
+                
+        except Exception as e:
+            logger.error(f"System say failed: {e}")
 
     def stop_speaking(self):
         """Stop current speech"""
