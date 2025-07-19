@@ -4,7 +4,6 @@ Jarvis STT Pipeline - Because your assistant needs to actually hear you, duh.
 This is the foundation for speech-to-text processing with both Whisper and Vosk options.
 """
 
-import asyncio
 import threading
 import time
 import numpy as np
@@ -37,9 +36,9 @@ class AudioConfig:
 
 
 class AudioBuffer:
-    """Circular buffer for audio data with voice activity detectionÃ¢"""
+    """Circular buffer for audio data with voice activity detection"""
 
-    def __init__(self, max_size: int = 32000):  # ~2 seconds at 16kHz
+    def __init__(self, max_size: int = 32000, debug: bool = False):  # ~2 seconds at 16kHz
         self.buffer = deque(maxlen=max_size)
         self.is_recording = False
         self.silence_counter = 0
@@ -47,6 +46,7 @@ class AudioBuffer:
         self.recent_rms = deque(maxlen=10)  # Track recent RMS values
         self.background_rms = 0.0
         self.recording_chunks = 0  # Track how long we've been recording
+        self.debug = debug
         
     def add_chunk(self, chunk: np.ndarray, config: AudioConfig) -> bool:
         """Add audio chunk and detect speech activity"""
@@ -84,12 +84,12 @@ class AudioBuffer:
         else:
             self._debug_counter = 0
             
-        if self._debug_counter % 500 == 0:  # Print every 500 chunks (~30 seconds)
+        if self.debug and self._debug_counter % 500 == 0:  # Print every 500 chunks (~30 seconds)
             logger.info(f"RMS: {rms:.1f}, Speech Threshold: {speech_threshold:.1f}, Silence Threshold: {silence_threshold:.1f}, Background: {self.background_rms:.1f}, Speech: {self.speech_detected}")
         
         # Speech detection: use higher threshold
         if not self.speech_detected and rms > speech_threshold:
-            logger.info(f"Speech detected - starting recording (RMS: {rms:.1f} > {speech_threshold:.1f})")
+            if self.debug: logger.info(f"Speech detected - starting recording (RMS: {rms:.1f} > {speech_threshold:.1f})")
             self.speech_detected = True
             self.is_recording = True
             self.silence_counter = 0
@@ -101,7 +101,7 @@ class AudioBuffer:
             silence_threshold_chunks = config.silence_duration * config.sample_rate / config.chunk_size
             
             # Debug: Show silence progress occasionally
-            if self.silence_counter % 3 == 0:  # Every 3 chunks
+            if self.debug and self.silence_counter % 3 == 0:  # Every 3 chunks
                 logger.info(f"Silence counting: {self.silence_counter}/{silence_threshold_chunks:.1f} chunks (RMS: {rms:.1f} <= {silence_threshold:.1f})")
             
             if self.silence_counter > silence_threshold_chunks:
@@ -143,7 +143,7 @@ class AudioBuffer:
 class WhisperSTT:
     """Whisper-based STT implementation - The heavyweight championÃ¢"""
 
-    def __init__(self, model_name: str = "base"):
+    def __init__(self, model_name: str = "base.en"):
         try:
             import whisper
             self.model = whisper.load_model(model_name)
@@ -259,13 +259,15 @@ class JarvisSTT:
     def __init__(self, 
                  stt_engine: str = "whisper",
                  model_name: str = "base",
-                 wake_words: list = ["jarvis", "hey jarvis"]):
+                 wake_words: list = ["jarvis", "hey jarvis"],
+                 debug: bool = False):
         
         self.config = AudioConfig()
-        self.audio_buffer = AudioBuffer()
+        self.audio_buffer = AudioBuffer(debug=debug)
         self.wake_detector = WakeWordDetector(wake_words)
         self.is_listening = False
         self.is_processing = False
+        self.debug = debug
         
         # Initialize STT engine
         if stt_engine.lower() == "whisper":
@@ -342,7 +344,7 @@ class JarvisSTT:
         if utterance_complete:
             logger.info(f"🎆 Utterance complete! is_processing: {self.is_processing}")
             if not self.is_processing:
-                logger.info("🚀 Starting transcription thread...")
+                if self.debug: logger.info("🚀 Starting transcription thread...")
                 # Process the complete utterance in a separate thread
                 threading.Thread(target=self._process_audio, daemon=True).start()
             else:
@@ -387,6 +389,79 @@ class JarvisSTT:
         finally:
             self.is_processing = False
 
+    def listen_and_transcribe(self, timeout: float = 10.0) -> str:
+        """Listen from microphone and return transcription text
+        
+        Args:
+            timeout: Maximum time to wait for speech (seconds)
+            
+        Returns:
+            str: The transcribed text, or empty string if no speech detected
+        """
+        if self.debug: logger.info(f"Starting listen_and_transcribe with {timeout}s timeout")
+        
+        # Create a temporary audio buffer for this session
+        temp_buffer = AudioBuffer(debug=False)
+        transcription = ""
+        
+        try:
+            # Open audio stream for recording
+            stream = self.audio.open(
+                format=self.config.format,
+                channels=self.config.channels,
+                rate=self.config.sample_rate,
+                input=True,
+                frames_per_buffer=self.config.chunk_size
+            )
+            
+            if self.debug: logger.info("Listening for speech...")
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                # Read audio chunk
+                try:
+                    data = stream.read(self.config.chunk_size, exception_on_overflow=False)
+                    print(f"Read {len(data)} bytes of audio data")
+                    audio_chunk = np.frombuffer(data, dtype=np.int16)
+                    print(f"Audio chunk length: {len(audio_chunk)}")
+                    
+                    # Add to buffer and check for complete utterance
+                    utterance_complete = temp_buffer.add_chunk(audio_chunk, self.config)
+                    print(f"utterance_complete: {utterance_complete}")
+                    
+                    if utterance_complete:
+                        logger.info("Complete utterance detected, transcribing...")
+                        # Get the audio data
+                        audio_data = temp_buffer.get_audio_data()
+                        
+                        print(f"Audio data length: {len(audio_data)}")
+                        
+                        if len(audio_data) > 0:
+                            # Transcribe the audio
+                            transcription = self.stt_engine.transcribe(audio_data, self.config)
+                            logger.info(f"Transcription result: '{transcription}'")
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"Audio read error: {e}")
+                    continue
+                    
+                # Small delay to prevent high CPU usage
+                time.sleep(0.01)
+            
+            # Clean up
+            stream.stop_stream()
+            stream.close()
+            
+            if self.debug and not transcription:
+                logger.info("No speech detected within timeout period")
+            
+            return transcription.strip() if transcription else ""
+            
+        except Exception as e:
+            logger.error(f"Error in listen_and_transcribe: {e}")
+            return ""
+    
     def transcribe_file(self, filename: str) -> str:
         """Transcribe audio from file - for testing"""
         try:
