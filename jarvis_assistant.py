@@ -5,6 +5,7 @@ import datetime
 import threading
 import logging
 from speech_analysis import JarvisSTT, JarvisTTS
+from commands import JarvisCommands
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -19,26 +20,14 @@ class JarvisAssistant:
         self.is_active = False
         self.is_listening = False
         
+        # Initialize centralized command system
+        self.commands = JarvisCommands(self.tts, self)
+        
         # Set up STT callbacks
         self.stt.set_speech_callback(self.on_speech_received)
         self.stt.set_wake_word_callback(self.on_wake_word_detected)
         
-        # Simple command processing
-        self.commands = {
-            "time": self.tell_time,
-            "date": self.tell_date, 
-            "hello": self.greet,
-            "hi": self.greet,
-            "goodbye": self.goodbye,
-            "bye": self.goodbye,
-            "how are you": self.status_check,
-            "status": self.status_check,
-            "test": self.test_response,
-            "stop listening": self.stop_listening,
-            "shutdown": self.shutdown
-        }
-        
-        logger.info("Jarvis Assistant initialized")
+        logger.info("Jarvis Assistant initialized with centralized command system")
     
     def on_wake_word_detected(self):
         """Handle wake word detection"""
@@ -51,90 +40,15 @@ class JarvisAssistant:
         logger.info(f"📝 Speech received: '{text}'")
         
         if self.is_active or "jarvis" in text.lower():
-            self.process_command(text)
+            # Activate if "jarvis" is mentioned but not already active
+            if "jarvis" in text.lower() and not self.is_active:
+                self.is_active = True
+                self.tts.speak_direct("Yes, sir. How may I assist you?")
+            
+            # Process the command using centralized system
+            self.commands.process_command(text)
         else:
             logger.info("Jarvis is not active - say 'Jarvis' to activate")
-    
-    def process_command(self, text):
-        """Process voice commands"""
-        text_lower = text.lower()
-        
-        # Check for exact command matches
-        for command, handler in self.commands.items():
-            if command in text_lower:
-                logger.info(f"🎯 Executing command: {command}")
-                handler(text)
-                return
-        
-        # Default response for unrecognized commands
-        self.handle_unknown_command(text)
-    
-    def tell_time(self, text):
-        """Tell current time"""
-        current_time = datetime.datetime.now().strftime("%I:%M %p")
-        response = f"The current time is {current_time}, sir."
-        self.tts.speak_direct(response)
-    
-    def tell_date(self, text):
-        """Tell current date"""
-        current_date = datetime.datetime.now().strftime("%A, %B %d, %Y")
-        response = f"Today is {current_date}, sir."
-        self.tts.speak_direct(response)
-    
-    def greet(self, text):
-        """Handle greetings"""
-        current_hour = datetime.datetime.now().hour
-        if current_hour < 12:
-            greeting = "Good morning"
-        elif current_hour < 18:
-            greeting = "Good afternoon"
-        else:
-            greeting = "Good evening"
-        
-        response = f"{greeting}, sir. How may I assist you today?"
-        self.tts.speak_direct(response)
-    
-    def goodbye(self, text):
-        """Handle goodbye"""
-        self.tts.speak_direct("Until next time, sir. Have a pleasant day.")
-        self.is_active = False
-    
-    def status_check(self, text):
-        """System status check"""
-        response = "All systems are functioning normally, sir. I am ready to assist you."
-        self.tts.speak_direct(response)
-    
-    def test_response(self, text):
-        """Test response"""
-        responses = [
-            "Test successful. All systems operational, sir.",
-            "Voice recognition and synthesis are working perfectly, sir.",
-            "I hear you loud and clear, sir."
-        ]
-        import random
-        self.tts.speak_direct(random.choice(responses))
-    
-    def stop_listening(self, text):
-        """Stop listening temporarily"""
-        self.tts.speak_direct("Stopping voice recognition, sir. Say my name to reactivate.")
-        self.is_active = False
-    
-    def shutdown(self, text):
-        """Shutdown the assistant"""
-        self.tts.speak_direct("Shutting down. Until next time, sir.")
-        self.is_listening = False
-        self.is_active = False
-    
-    def handle_unknown_command(self, text):
-        """Handle unrecognized commands"""
-        responses = [
-            "I'm not sure I understand that request, sir. Could you please rephrase?",
-            "I don't have that capability at the moment, sir. How else may I assist you?",
-            "I'm afraid I don't comprehend that command, sir. Please try again.",
-            "Could you please clarify what you'd like me to do, sir?"
-        ]
-        import random
-        self.tts.speak_direct(random.choice(responses))
     
     def start(self):
         """Start the voice assistant"""
@@ -142,14 +56,14 @@ class JarvisAssistant:
         print("=" * 60)
         print("🎙️  Say 'Jarvis' to activate")
         print("📢 Available commands:")
-        print("   • 'time' - Get current time")
-        print("   • 'date' - Get current date") 
-        print("   • 'hello/hi' - Greeting")
-        print("   • 'how are you/status' - System status")
-        print("   • 'test' - Test response")
-        print("   • 'stop listening' - Deactivate")
-        print("   • 'goodbye/bye' - Farewell") 
-        print("   • 'shutdown' - Exit assistant")
+        print("   • Time & Date: 'time', 'date', 'what time is it'")
+        print("   • Greetings: 'hello', 'hi', 'good morning/afternoon/evening'")
+        print("   • Status: 'how are you', 'status', 'system status'")
+        print("   • System Info: 'battery', 'memory', 'disk space'")
+        print("   • Entertainment: 'joke', 'tell me a joke'")
+        print("   • Help: 'help', 'what can you do', 'commands'")
+        print("   • Control: 'stop listening', 'shutdown', 'goodbye'")
+        print("   • Identity: 'who are you', 'introduce yourself'")
         print("⏹️  Press Ctrl+C to stop")
         print("=" * 60)
         

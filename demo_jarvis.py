@@ -12,16 +12,18 @@ def demo_voice_responses():
     
     assistant = JarvisAssistant()
     
-    # Test various responses
+    # Test various responses with new centralized commands
     demo_interactions = [
         ("Wake word activation", lambda: assistant.on_wake_word_detected()),
-        ("Greeting", lambda: assistant.greet("hello jarvis")),
-        ("Time request", lambda: assistant.tell_time("what time is it")),
-        ("Date request", lambda: assistant.tell_date("what's the date")),
-        ("Status check", lambda: assistant.status_check("how are you")),
-        ("Test command", lambda: assistant.test_response("test")),
-        ("Unknown command", lambda: assistant.handle_unknown_command("play music")),
-        ("Goodbye", lambda: assistant.goodbye("goodbye"))
+        ("Greeting", lambda: assistant.commands.process_command("hello jarvis")),
+        ("Time request", lambda: assistant.commands.process_command("what time is it")),
+        ("Date request", lambda: assistant.commands.process_command("what's the date")),
+        ("System status", lambda: assistant.commands.process_command("how are you")),
+        ("Battery check", lambda: assistant.commands.process_command("battery")),
+        ("Tell a joke", lambda: assistant.commands.process_command("tell me a joke")),
+        ("Introduction", lambda: assistant.commands.process_command("who are you")),
+        ("Help command", lambda: assistant.commands.process_command("help")),
+        ("Goodbye", lambda: assistant.commands.process_command("goodbye"))
     ]
     
     for description, action in demo_interactions:
